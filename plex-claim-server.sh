@@ -5,6 +5,14 @@ if [ "${DEBUG,,}" = "true" ]; then
   set -x
 fi
 
+function getDefaultPlexMediaServerAppDir {
+  if [[ ${PLEX_MEDIA_SERVER_INFO_DEVICE:x} == "Docker"* ]]; then
+    echo "/config/Library/Application Support"
+  else
+    echo "${home}/Library/Application Support"
+  fi
+}
+
 function getPref {
   local key="$1"
   sed -n -E "s/^.*${key}=\"([^\"]*)\".*$/\1/p" "${prefFile}"
@@ -13,7 +21,7 @@ function getPref {
 function setPref {
   local key="$1"
   local value="$2"
-  
+
   count="$(grep -c "${key}" "${prefFile}")"
   count=$(($count + 0))
   if [[ $count > 0 ]]; then
@@ -24,10 +32,19 @@ function setPref {
 }
 
 home="$(echo ~plex)"
-pmsApplicationSupportDir="${PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR:-${home}/Library/Application Support}"
+pmsApplicationSupportDir="${PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR:-$(getDefaultPlexMediaServerAppDir)}"
 prefFile="${pmsApplicationSupportDir}/Plex Media Server/Preferences.xml"
+if [ ! -f "${prefFile}" ]; then
+  >&2 echo "Preferences file not found: ${prefFile}"
+  exit 1
+fi
 
 PLEX_CLAIM="$1"
+if [ -z "${PLEX_CLAIM}" ]; then
+  >&2 echo "Claim token not provided"
+  >&2 echo "Usage: $(basename $0) <claim-token>"
+  exit 1
+fi
 
 # Create empty shell pref file if it doesn't exist already
 if [ ! -e "${prefFile}" ]; then
@@ -67,10 +84,9 @@ if [ ! -z "${PLEX_CLAIM}" ] && [ -z "${token}" ]; then
         -H 'X-Plex-Device: Linux' \
         "https://plex.tv/api/claim/exchange?token=${PLEX_CLAIM}")"
   token="$(echo "$loginInfo" | sed -n 's/.*<authentication-token>\(.*\)<\/authentication-token>.*/\1/p')"
-  
+
   if [ "$token" ]; then
     setPref "PlexOnlineToken" "${token}"
     echo "Plex Media Server successfully claimed"
   fi
 fi
-
